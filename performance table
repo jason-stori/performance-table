@@ -1,0 +1,146 @@
+drop table if exists ua.risk_levels_jz;
+create table ua.risk_levels_jz   (
+ecrm_v1_twentile varchar(30)
+-- ,min_score Float(9)
+-- ,max_score Float(9)
+,risk_level Float(9)
+);
+
+INSERT INTO ua.risk_levels_jz 
+    (ecrm_v1_twentile, risk_level) 
+VALUES 
+(1,0.050706229041764),
+(2,0.0902713072074541),
+(3,0.114875627986766),
+(4,0.142942544005314),
+(5,0.170604457032123),
+(6,0.200147710487445),
+(7,0.218084120807856),
+(8,0.244561902825778),
+(9,0.274388218358986),
+(10,0.294388931591084),
+(11,0.322778345250255),
+(12,0.364107547781017),
+(13,0.391075127094709),
+(14,0.418241042345277),
+(15,0.452195734002509),
+(16,0.499065420560748),
+(17,0.552103069344449),
+(18,0.591419816138917),
+(19,0.655425219941349),
+(20,0.775067750677507)
+    ;
+
+-- select * from ua.risk_levels_jz;
+
+drop table if exists ua.contribution_margin_data_jz;
+
+create table ua.contribution_margin_data_jz
+as (
+select
+        stm.vintage,
+        CASE
+			WHEN SUBSTRING(vintage, 5, 2) BETWEEN 1 and 3 THEN substring(vintage,1,4)||'Q1'
+			WHEN SUBSTRING(vintage, 5, 2) BETWEEN 4 and 6 THEN substring(vintage,1,4)||'Q2'
+			WHEN SUBSTRING(vintage, 5, 2) BETWEEN 7 and 9 THEN substring(vintage,1,4)||'Q3'
+			WHEN SUBSTRING(vintage, 5, 2) BETWEEN 10 and 12 THEN substring(vintage,1,4)||'Q4'
+			END as quarter,
+        stm.stmt_num,
+        stm.acct_id,
+        stm.appl_id,
+        stm.acct_status_desc,
+        case when acct_status_desc = 'Closed' and lag(acct_status_desc,1) over(partition by stm.acct_id order by stm.stmt_num)  = 'Active' then 1 else 0 end as closing_flag,
+        pro.open_fee,
+        stm.apr_amt,
+		stm.prod_type_desc,
+-- 		ecrm_v1,
+		ecrm_v1_bin,
+        case
+                        when ecrm_v1_bin < 0 then null
+                        when ecrm_v1_bin between 1 and 100 then ceil(ecrm_v1_bin::float / 5)
+                        else null
+                end as ecrm_twentile,
+    	risk_level,
+        case when stm.curr_tot_prncp_amt >= 0 then stm.curr_tot_prncp_amt else 0 end as stmt_curr_tot_prncp_amt,
+        case 
+                when stm.delinq_status is null then null
+                when stm.delinq_status in ('DQ 31-60','DQ 61-90','DQ 91-120','DQ 121-150','DQ 151-180','DQ 181-210','DQ 210+') 
+                then 1 else 0 end as dq30_flag,
+        stm.delinq_status,
+        case 
+                when stm.delinq_status is null then null
+                when stm.delinq_status in ('DQ 91-120','DQ 121-150','DQ 151-180','DQ 181-210','DQ 210+') 
+                then 1 else 0 end as dq90_flag,
+        case 
+                when stm.delinq_status is null then null
+                when lead(dq30_flag, 2) over (partition by stm.acct_id order by stm.stmt_num) = 1
+                then stmt_curr_tot_prncp_amt else 0 end as cum_dq30_prncp_pb,
+        case 
+                when stm.delinq_status is null then null
+                when lead(dq90_flag, 4) over (partition by stm.acct_id order by stm.stmt_num) = 1
+                then stmt_curr_tot_prncp_amt else 0 end as cum_dq90_prncp_pb,
+        case 
+			when stm.delinq_status is null then null
+			when stm.delinq_status in ('DQ 181-210','DQ 210+') 
+			then 1 else 0 end as co_flag,                         -- Current charge-off cut off
+		lead(co_flag, 6) over (partition by stm.acct_id order by stm.stmt_num) as co_flag_pb,
+        --	Behavior data
+		stm.stmt_tot_purchase_amt - stm.stmt_rev_purchase_amt as purchase_amt,
+		stm.start_posted_bal_amt as start_bal,
+		stm.curr_posted_bal_amt,
+-- 		stm.revolver_avg_daily_bal_amt as ibb,   ------------------- We don't trust this field, use below line instead
+		case when stm.stmt_charged_interest_amt > 0 then all_avg_daily_bal_amt else 0 end as ibb, ---interest bearing balance
+		stm.all_avg_daily_bal_amt,
+		stm.curr_credit_limit_amt as credit_limit,
+		stm.init_credit_limit_amt as icl ,
+-- 		stm.charge_off_amt as co_amt,
+		case when stm.delinq_status in ('DQ 1-30','DQ 31-60','DQ 61-90','DQ 91-120','DQ 121-150','DQ 151-180','DQ 181-210','DQ 210+') > 0 then 1 else 0 end as dq_flag,
+		case when stm.all_avg_daily_bal_amt > 0 and co_flag = 0 then 1 else 0 end as active_flag,
+-- 		--	Payment data
+		stm.stmt_charged_interest_amt,
+
+-- 		stm.stmt_posted_non_of_pmt_amt,
+-- 		dat.stmt_cum_posted_non_of_pmt_amt,
+-- 		stm.stmt_paid_interest_amt,
+-- 		-- Rev data
+        stm.stmt_tot_interchange_fee_amt,
+--         stm.stmt_paid_fee_amt,
+--         case when stmt_num = 1 then pro.open_fee else 0 end as open_fee_rev,
+--         stm.stmt_paid_interest_amt + stm.stmt_tot_interchange_fee_amt + stm.stmt_paid_fee_amt + open_fee_rev - stmt_tot_refund_fee_amt - stmt_tot_refund_interests_amt as realized_revenue,
+--         sum(realized_revenue) over (partition by stm.acct_id order by stm.stmt_num rows unbounded preceding) as cum_realized_revenue,
+        max(stmt_num) over (partition by stm.acct_id order by stm.stmt_num rows between current row and unbounded following) as total_stmts
+from ua.wen_stmt_acct_table_v3 stm
+left join (select coalesce(open_fee, 0) as open_fee, appl_id
+        from stori_cca_ro.application_product_offered_cur) as pro on stm.appl_id = pro.appl_id
+left join (select
+                cycle_start_date, cycle_end_date, pmt_due_date
+        from ua.statement_cycle_list) as cal on stm.cycle_end_dt + 1 = cal.cycle_start_date
+left join (select 
+                delinq_days_cnt, delinq_status, acct_id, snap_dt, stmt_cum_posted_non_of_pmt_amt, case when curr_tot_prncp_amt >= 0 then curr_tot_prncp_amt else 0 end as curr_tot_prncp_amt
+        from ua.wen_daily_acct_table_v3) as dat on stm.acct_id = dat.acct_id and dat.snap_dt = cal.pmt_due_date
+
+-- left join (select distinct coalesce(a.appl_id::bigint, b.appl_id::bigint) as appl_id, coalesce(ecrm_bin_aug_base, model_bin) as ecrm0_bin, 
+-- coalesce(ecrm, model_score) as ecrm0_score
+-- , coalesce(ecrm_dv, device) as ecrm0_dv
+-- , coalesce(ecrm_buro, buro) as ecrm0_buro
+-- , coalesce(ecrm_ads, ads) as ecrm0_ads  from ua.ecrm_retro a full outer join 
+-- model_tables_npi_class_2.stori_credit_card_ecrm_model_0_0_0_mes b
+-- on a.appl_id=b.appl_id) as er on er.appl_id = stm.appl_id
+
+left join (select appl_id,
+-- 		ecrm_v1,
+		model_bin as ecrm_v1_bin
+		from ua.ecrm_v1_bin_only_temp) evr on stm.appl_id = evr.appl_id
+
+left join ua.risk_levels_jz b
+on  (case
+                when evr.ecrm_v1_bin < 0 then null
+                when evr.ecrm_v1_bin between 1 and 100 then ceil(evr.ecrm_v1_bin::float / 5)
+                else null end)
+    = b.ecrm_v1_twentile
+
+where (vintage is not null and stmt_num >= 1)
+and vintage > 202001
+and prod_type_desc in ('CLASSIC', 'CONSTRUYE')
+)
+;
