@@ -129,8 +129,8 @@ left join (select
 
 left join (select appl_id,
 -- 		ecrm_v1,
-		model_bin as ecrm_v1_bin
-		from ua.ecrm_v1_bin_only_temp) evr on stm.appl_id = evr.appl_id
+		ecrm_bin as ecrm_v1_bin
+		from ua.ecrm_full) evr on stm.appl_id = evr.appl_id
 
 left join ua.risk_levels_jz b
 on  (case
@@ -144,3 +144,6 @@ and vintage > 202001
 and prod_type_desc in ('CLASSIC', 'CONSTRUYE')
 )
 ;
+
+
+select * from  ua.contribution_margin_data_jz limit 100;
