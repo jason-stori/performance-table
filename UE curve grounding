@@ -1,0 +1,267 @@
+---Pvol
+Select
+ecrm_decile
+,stmt_num
+,icl
+,avg(credit_limit) as cl
+,avg(risk_level) as risk_level
+-- ,avg(purchase_amt) as pvol
+,sum(purchase_amt)/sum(credit_limit) as pvol_util
+,pvol_util/(LEAD(pvol_util, (12 - stmt_num)) over (partition by icl order by stmt_num)) as stmt12_pct
+-- ,sum(purchase_amt)/(sum(credit_limit)-sum(start_bal)) as pvol_util_avail
+,count(*)
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+and icl in ('500.000','1000.000','2000.000','3000.000','4000.000','8000.000')
+-- and icl in ('2000.000','3000.000','4000.000','8000.000')
+and stmt_num = 12
+and active_flag = 1
+and ecrm_twentile is not NULL
+and delinq_status = 'Current'
+and credit_limit > 0
+group by 1,2,3
+	having count(*) > 100
+order by 1,2,3
+;
+
+---Attrition Rate
+Select 
+-- ecrm_twentile
+ecrm_decile
+-- ,credit_limit
+,icl
+,stmt_num
+,avg(risk_level) as risk 
+,avg(ibb)/avg(curr_posted_bal_amt) as revolve_rate 
+,revolve_rate/(LEAD(revolve_rate, (12 - stmt_num)) over (partition by ecrm_decile, icl order by stmt_num)) as stmt12_pct
+,count(distinct acct_id)
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+and icl in ('500.000','1000.000','2000.000','3000.000','4000.000','8000.000')
+-- and icl = 1000
+and stmt_num <= 12
+and active_flag = 1
+and ecrm_twentile is not NULL
+and delinq_status = 'Current'
+and credit_limit > 0
+group by 1,2,3
+	having count(*) > 10
+order by 1,2,3
+;
+
+---Revolve Rate stmt 12 grounding
+Select 
+-- ecrm_twentile
+ecrm_decile
+-- ,credit_limit
+,icl
+,stmt_num
+,avg(risk_level) as risk 
+,avg(ibb)/avg(curr_posted_bal_amt) as revolve_rate 
+,revolve_rate/(LEAD(revolve_rate, (12 - stmt_num)) over (partition by ecrm_decile, icl order by stmt_num)) as stmt12_pct
+,count(distinct acct_id)
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+and icl in ('500.000','1000.000','2000.000','3000.000','4000.000','8000.000')
+-- and icl = 1000
+and stmt_num <= 12
+and active_flag = 1
+and ecrm_twentile is not NULL
+and delinq_status = 'Current'
+and credit_limit > 0
+group by 1,2,3
+	having count(*) > 10
+order by 1,2,3
+;
+
+--Revolve rate curve grounding
+
+select
+rr_12_bucket
+-- rr_stmt_12
+,stmt_num
+,avg(rr_stmt_12) as rr_stmt_12_avg
+,avg(ibb)/avg(curr_posted_bal_amt) as revolve_rate 
+,avg(ibb)/avg(curr_posted_bal_amt)/avg(rr_stmt_12) as stm_12_pct
+,count(distinct acct_id)
+
+from (select *
+		, 0.3901148186 + (0.00001934151759 * cast(credit_limit as float)) + (0.284472041 * cast(risk_level as float)) as rr_stmt_12 ---stmt 12 regression
+		,ntile(50) over (order by rr_stmt_12) as rr_12_ntile
+		,round(rr_stmt_12, 2) as rr_12_bucket
+		from ua.contribution_margin_data_jz)
+where vintage between '202011' and '202105'
+and stmt_num <= 12
+and active_flag = 1
+and ecrm_twentile is not NULL
+and delinq_status = 'Current'
+and credit_limit > 0
+group by 1,2
+having count(distinct acct_id) > 10
+order by 1,2
+;
+
+
+
+select *
+		, 0.3901148186 + (0.00001934151759 * cast(credit_limit as float)) + (0.284472041 * cast(risk_level as float)) as rr_stmt_12
+		,ntile(20) over (order by rr_stmt_12) as rr_12_bucket
+-- 			+ (0.00001934151759 * cast(credit_limit as float)) + (0.284472041 * cast(risk_level as float)) as rr_stmt_12 ---stmt 12 regression
+		from ua.contribution_margin_data_jz
+limit 100;
+;
+
+---Util Curves
+Select 
+ecrm_twentile
+-- case when ecrm_bin between 1 and 2 then 'lowest_risk'
+-- 	when ecrm_bin between 99 and 100 then 'highest_risk'
+-- 	else 'other' END as ecrm_bucket
+,icl
+,stmt_num
+,avg(risk_level) as risk 
+-- ,avg(cast(case when delinq_status = 'DQ 1-30' then 1 else 0 end as float)) as dq1pct
+-- ,avg(cast(case when delinq_status = 'DQ 31-60' then 1 else 0 end as float)) as dq30pct
+-- ,avg(cast(case when delinq_status = 'DQ 61-90' then 1 else 0 end as float)) as dq60pct
+-- ,avg(cast(case when delinq_status = 'DQ 91-120' then 1 else 0 end as float)) as dq90pct
+-- ,avg(cast(case when delinq_status = 'DQ 121-150' then 1 else 0 end as float)) as dq120pct
+-- ,avg(cast(case when delinq_status = 'DQ 151-180' then 1 else 0 end as float)) as dq150pct
+-- ,'DQ 31-60','DQ 61-90','DQ 91-120','DQ 121-150','DQ 151-180'
+,avg(curr_posted_bal_amt)/avg(credit_limit) as Util 
+,count(distinct acct_id)
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+-- and icl in ('500.000','1000.000','2000.000','3000.000','4000.000','8000.000')
+and icl = 1000
+and stmt_num <=12
+-- and stmt_num between 9 and 11
+and active_flag = 1
+and ecrm_twentile is not NULL
+and delinq_status = 'Current'
+	and acct_status_desc = 'Active'
+group by 1,2,3
+	having count(*) > 100
+order by 1,2,3
+;
+
+----Activity
+select
+ecrm_decile
+,stmt_num
+,icl
+,case when open_fee > 0 then 1 else 0 end as open_fee_ind
+,avg(risk_level) as avg_risk_lvl
+,1 - avg(cast(active_flag as FLOAT)) as inactive_pct
+,count(distinct acct_id) 
+-- ,lag(count(acct_id),stmt_num - 1) over(partition by ecrm_bucket order by stmt_num) as orig_acct
+from ua.contribution_margin_data_jz
+where 1=1
+	and vintage between '202011' and '202106'
+	-- and vintage = '202004'
+	and stmt_num between 2 and 14
+	and ecrm_decile is not null
+	and icl in ('500.000','1000.000','2000.000','3000.000','4000.000','8000.000')
+	and co_flag = 0
+	and dq_flag = 0
+	and acct_status_desc = 'Active'
+group by 1,2,3,4
+	having count(*) > 100
+order by 1,2,3,4
+;
+
+select distinct icl from ua.contribution_margin_data_jz;
+
+----Severity
+Select 
+-- risk_icl_decile
+icl
+,ecrm_decile
+-- credit_limit
+-- case when ecrm_bin between 1 and 2 then 'lowest_risk'
+-- 	when ecrm_bin between 99 and 100 then 'highest_risk'
+-- 	else 'other' END as ecrm_bucket
+,stmt_num
+-- ,sum(case when delinq_status = 'DQ 31-60' then 1 else 0 end) 
+-- ,sum(dq30_flag)
+,count(distinct acct_id)
+,avg(curr_posted_bal_amt - credit_limit) as amt_over_cl
+,avg(curr_posted_bal_amt)/avg(credit_limit) as severity
+,avg(credit_limit) as credit_limit
+,count(*)
+-- ,lag(count(acct_id),stmt_num - 1) over(partition by ecrm_bucket order by stmt_num) as orig_acct
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+-- and stmt_num <=12
+and delinq_status = 'DQ 181-210'
+group by 1,2,3
+order by 1,2,3
+;
+
+-----Roll Rate
+Select 
+-- risk_icl_decile
+-- ecrm_twentile
+-- risk_decile
+ecrm_decile
+-- case when ecrm_bin between 1 and 2 then 'lowest_risk'
+-- 	when ecrm_bin between 99 and 100 then 'highest_risk'
+-- 	else 'other' END as ecrm_bucket
+,stmt_num
+,avg(cast(co_flag_pb as FLOAT))
+,avg(risk_level) as avg_risk_lvl
+-- ,avg(risk_x_icl) as avg_risk_icl
+,count(distinct acct_id)
+-- ,lag(count(acct_id),stmt_num - 1) over(partition by ecrm_bucket order by stmt_num) as orig_acct
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+-- and vintage = '202004'
+and stmt_num between 3 and 11
+and delinq_status = 'DQ 31-60'
+group by 1,2
+order by 1,2
+;
+
+SELECT
+delinq_status
+,avg(cast(co_flag_pb as FLOAT))
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202106'
+group by 1
+order by 1;
+
+
+--- Risk level
+Select 
+ecrm_twentile
+-- case when ecrm_v1 between 0 and 0.09 then 'lowest_risk'	
+-- 	when ecrm_v1 between 0.38 and 1 then 'highest_risk'
+-- 	else 'other' END as ecrm
+,stmt_num
+,lag(count(distinct acct_id),stmt_num - 1) over(partition by ecrm_twentile order by stmt_num) as orig_acct
+-- ,lag(count(distinct acct_id),stmt_num - 1) over(partition by ecrm order by stmt_num) as orig_acct
+,sum(case when delinq_status = 'DQ 31-60' then 1 else 0 end) as dq30_60
+,cast(sum(case when delinq_status = 'DQ 31-60' then 1 else 0 end) as float) /count(distinct acct_id) as dq30_60_open_pct
+,sum(co_flag) as co_flag
+,sum(cast(dq30_flag as float))/orig_acct as dq30plus
+,max(ecrm_v1) as max_ecrm
+,count(distinct acct_id)
+
+from ua.contribution_margin_data_jz
+where 1=1
+and vintage between '202011' and '202108'
+and stmt_num <=12
+-- and stmt_num = 10
+and acct_status_desc = 'Active'
+and icl = 1000
+group by 1,2
+order by 1,2
+;
+
+select * from  ua.contribution_margin_data_jz limit 100;
