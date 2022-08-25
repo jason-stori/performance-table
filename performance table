@@ -94,7 +94,7 @@ select
 		stm.curr_credit_limit_amt as credit_limit,
 		stm.init_credit_limit_amt as icl ,
 -- 		stm.charge_off_amt as co_amt,
-		case when stm.delinq_status in ('DQ 1-30','DQ 31-60','DQ 61-90','DQ 91-120','DQ 121-150','DQ 151-180','DQ 181-210','DQ 210+') > 0 then 1 else 0 end as dq_flag,
+		case when stm.delinq_status in ('DQ 1-30','DQ 31-60','DQ 61-90','DQ 91-120','DQ 121-150','DQ 151-180','DQ 181-210','DQ 210+') then 1 else 0 end as dq_flag,
 		case when stm.all_avg_daily_bal_amt > 0 and co_flag = 0 then 1 else 0 end as active_flag,
 -- 		--	Payment data
 		stm.stmt_charged_interest_amt,
